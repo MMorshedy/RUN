@@ -80,17 +80,17 @@ button,input{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 <script>
 var RACE = new Date(2026, 11, 10);
 var WEEKS = [
-  {t:"Week 1: build the habit", rest:"Rest days: Sun Nov 22, Tue Nov 24, Thu Nov 26. Light walking is fine.", s:[
+  {t:"Week 1: build the habit", rest:"Rest or light walking on the days in between.", s:[
     ["2026-11-21","Sat","5 min brisk walk, then 8 × (1 min jog / 2 min walk), then 5 min walk"],
     ["2026-11-23","Mon","8 × (1.5 min jog / 2 min walk)"],
     ["2026-11-25","Wed","6 × (2 min jog / 2 min walk)"],
     ["2026-11-27","Fri","Easy 45–60 min walk"]]},
-  {t:"Week 2: build endurance", rest:"Rest on all other days.", s:[
+  {t:"Week 2: build endurance", rest:"Rest on the days in between.", s:[
     ["2026-11-28","Sat","5 × (3 min jog / 1.5 min walk)"],
     ["2026-11-30","Mon","4 × (5 min jog / 2 min walk)"],
     ["2026-12-02","Wed","3 × (7 min jog / 2 min walk)"],
     ["2026-12-04","Fri","Long walk/jog, 70–90 min, mostly walking with a few jog blocks. Aim for 8–10 km."]]},
-  {t:"Week 3: sharpen and rest", rest:"Dec 8–9: rest, light walking, good sleep, plenty of water.", s:[
+  {t:"Week 3: sharpen and rest", rest:"In the days before the race: rest, light walking, good sleep, plenty of water.", s:[
     ["2026-12-05","Sat","3 × (8 min jog / 2 min walk)"],
     ["2026-12-07","Mon","Easy 20–25 min jog/walk"],
     ["2026-12-10","Thu","Race day. Start very slowly: 4 min jog / 1 min walk, and walk through water stations.",1]]}
@@ -101,15 +101,31 @@ function save(){ try { localStorage.setItem(KEY, JSON.stringify(data)); } catch 
 function todayStr(){ var d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
 function pretty(s){ var p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]).toLocaleDateString("en-GB",{day:"numeric",month:"short"}); }
 var all = []; WEEKS.forEach(function(w){ w.s.forEach(function(x){ all.push(x); }); });
+function fmt(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function addDay(s){ var p=s.split("-"); return fmt(new Date(+p[0],+p[1]-1,+p[2]+1)); }
+function wd(s){ var p=s.split("-"); return new Date(+p[0],+p[1]-1,+p[2]).toLocaleDateString("en-GB",{weekday:"short"}); }
+// Effective dates: done workouts keep the date they were ticked; unchecked ones roll forward to today (and later ones keep at least a day apart). Race day never moves.
+function eff(){
+  var t=todayStr(), prev=null, E={};
+  all.forEach(function(x){
+    var r=data[x[0]]||{}, d;
+    if (x[3]) d=x[0];
+    else if (r.done) d=r.date||x[0];
+    else { d = x[0]<t ? t : x[0]; if (prev && d<=prev) d=addDay(prev); }
+    E[x[0]]=d;
+    if (!x[3]) prev = (prev && prev>d) ? prev : d;
+  });
+  return E;
+}
 
 function build(){
-  var h = "", t = todayStr();
+  var h = "", t = todayStr(), E = eff();
   WEEKS.forEach(function(w){
     h += "<h2>"+w.t+"</h2>";
     w.s.forEach(function(x){
-      var id=x[0], r=data[id]||{}, cls="row"+(r.done?" done":"")+(id===t?" today":"")+(x[3]?" race":"");
+      var id=x[0], r=data[id]||{}, ed=E[id], cls="row"+(r.done?" done":"")+(ed===t?" today":"")+(x[3]?" race":"");
       h += '<div class="'+cls+'"><button class="chk" data-id="'+id+'" aria-pressed="'+(!!r.done)+'" aria-label="Mark '+pretty(id)+' as done">✓</button><div>'
-        + '<div class="date">'+x[1]+" "+pretty(id)+(id===t?"<small>today</small>":"")+(x[3]?"<small>race day</small>":"")+'</div>'
+        + '<div class="date">'+wd(ed)+" "+pretty(ed)+(ed===t?"<small>today</small>":"")+(ed!==id&&!r.done&&!x[3]?"<small>moved from "+pretty(id)+"</small>":"")+(x[3]?"<small>race day</small>":"")+'</div>'
         + '<div class="desc">'+x[2]+'</div><div class="log">'
         + '<label>Distance <input type="number" min="0" step="0.1" inputmode="decimal" data-id="'+id+'" data-f="km" value="'+(r.km||"")+'" placeholder="km"></label>'
         + '<label>Time <input type="number" min="0" step="1" inputmode="numeric" data-id="'+id+'" data-f="min" value="'+(r.min||"")+'" placeholder="min"></label>'
@@ -121,7 +137,8 @@ function build(){
 }
 
 function chart(el, field, unit){
-  var pts = all.map(function(x){ var r=data[x[0]]||{}; return {d:x[0],v:parseFloat(r[field])||0}; });
+  var E = eff();
+  var pts = all.map(function(x){ var r=data[x[0]]||{}; return {d:E[x[0]],v:parseFloat(r[field])||0}; });
   var max = Math.max.apply(null, pts.map(function(p){return p.v;}));
   if (!max){ el.innerHTML = '<div class="empty">Log a workout to see your '+unit+' here.</div>'; return; }
   var W=300,H=140,pad=18,bw=W/pts.length, s='<svg viewBox="0 0 '+W+' '+(H+16)+'" role="img" aria-label="'+unit+' per workout"><defs><linearGradient id="g'+field+'" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#ff5a1f"/><stop offset="1" stop-color="#ffc24a"/></linearGradient></defs>';
@@ -157,12 +174,14 @@ function update(){
 
 document.getElementById("plan").addEventListener("click", function(e){
   var b = e.target.closest(".chk"); if (!b) return;
-  var id=b.dataset.id; data[id]=data[id]||{}; data[id].done=!data[id].done; save(); build(); update();
+  var id=b.dataset.id, E=eff(); data[id]=data[id]||{}; data[id].done=!data[id].done;
+  if (data[id].done) data[id].date=E[id]; else delete data[id].date;
+  save(); build(); update();
 });
 document.getElementById("plan").addEventListener("change", function(e){
   var i=e.target; if (!i.dataset.f) return;
   var id=i.dataset.id; data[id]=data[id]||{}; data[id][i.dataset.f]=i.value;
-  if (i.value && !data[id].done) data[id].done=true;
+  if (i.value && !data[id].done){ var E=eff(); data[id].done=true; data[id].date=E[id]; }
   save(); build(); update();
 });
 document.getElementById("reset").addEventListener("click", function(){
